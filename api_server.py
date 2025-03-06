@@ -4,22 +4,14 @@ from pydantic import BaseModel
 from ds_util import DeepseekUtil
 from contextlib import asynccontextmanager
 
+global deep_seek
 # 1. 定义模型和分词器的全局变量（异步生命周期管理）
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 加载模型和分词器
-    model_dir = "./deepseek-33b"
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_dir,
-        device_map="auto",
-        torch_dtype=torch.float16,
-        low_cpu_mem_usage=True
-    )
+    global deep_seek
+    deep_seek = DeepseekUtil()
     yield
-    # 清理资源（可选）
-    del model
-    torch.cuda.empty_cache()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -36,21 +28,8 @@ async def chat_completion(request: ChatRequest):
     try:
         # 提取用户输入
         user_input = request.messages[-1]["content"]
-        
-        # 使用分词器编码输入
-        inputs = tokenizer(user_input, return_tensors="pt").to(model.device)
-        
-        # 生成文本
-        outputs = model.generate(
-            inputs.input_ids,
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            do_sample=True
-        )
-        
-        # 解码输出
-        response_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        global deep_seek
+        response_text = deep_seek.answer_question(user_input)
         
         # 构造兼容 OpenAI 的响应
         return {
